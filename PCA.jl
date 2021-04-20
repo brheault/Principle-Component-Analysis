@@ -59,12 +59,15 @@ column_major = transpose(floatAttr);
 allY = column_major[15,:];
 allX = vcat(column_major[1:14, :], column_major[16:27, :])
 
+#Create and use the PCA model to reduce dimensions
+M = fit(PCA, allX; maxoutdim=10)
+small_dim = MultivariateStats.transform(M, allX)
+
+#Convert result to row major for classification algorithms
+smalldim_row = transpose(smalldim_col);
+
 #Split the data into 70% training and 30% testing (5968 is ~70% of 8525)
-Xtr = allX[:, 1:5968];
-Xte = allX[:, 5969:8525];
-Ytr = allY[1:5968];
-Yte = allY[5969:8525];
-
-M = fit(PCA, Xtr; maxoutdim=10)
-
-P = projection(M)
+Xtr = smalldim_row[:, 1:5968];
+Xte = smalldim_row[:, 5969:8525];
+Ytr = smalldim_row[1:5968];
+Yte = smalldim_row[5969:8525];
