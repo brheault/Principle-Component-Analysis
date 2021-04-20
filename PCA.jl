@@ -4,13 +4,19 @@ using DataFrames;
 using Random;
 using ScikitLearn;
 using ScikitLearn: fit!, predict;
+using Plots;
 @sk_import preprocessing: LabelEncoder;
+@sk_import metrics: accuracy_score;
+@sk_import model_selection: train_test_split;
+@sk_import tree: DecisionTreeClassifier;
+@sk_import svm: SVC;
 
 #Load Dataframe
 df = DataFrame(CSV.File("01_hdp.csv"));
 attributes = convert(Array, df[:,:]);
 #Shuffle rows for training/testing split
 attributes = attributes[shuffle(1:end), :];
+Y = attributes[:,15];
 
 #Convert Family History
 enc = LabelEncoder();
@@ -55,19 +61,70 @@ floatAttr = convert(Array{Float64}, attributes);
 #Find the transpose for Julia convention
 column_major = transpose(floatAttr);
 
-#Remove cancer stage row and make it the y-vector
-allY = column_major[15,:];
-allX = vcat(column_major[1:14, :], column_major[16:27, :])
+#Remove cancer stage row
+allX = vcat(column_major[1:14, :], column_major[16:27, :]);
 
-#Create and use the PCA model to reduce dimensions
-M = fit(PCA, allX; maxoutdim=10)
-small_dim = MultivariateStats.transform(M, allX)
+tree_accuracies = zeros(20);
+svc_accuracies = zeros(20);
+i = 1;
+for entry in tree_accuracies
+    println(i, " Dimension(s)");
+    #Create and use the PCA model to reduce dimensions
+    M = fit(PCA, allX; maxoutdim=i);
+    smalldim_col = MultivariateStats.transform(M, allX);
 
-#Convert result to row major for classification algorithms
-smalldim_row = transpose(smalldim_col);
+    #Convert result to row major for classification algorithms
+    smalldim_row = transpose(smalldim_col);
 
-#Split the data into 70% training and 30% testing (5968 is ~70% of 8525)
-Xtr = smalldim_row[:, 1:5968];
-Xte = smalldim_row[:, 5969:8525];
-Ytr = smalldim_row[1:5968];
-Yte = smalldim_row[5969:8525];
+    #Split the data into 70% training and 30% testing (5968 is ~70% of 8525)
+    #println("test1")
+    Xtr = smalldim_row[1:5968, :];
+    Xte = smalldim_row[5969:8525, :];
+    #println("test2");
+    Ytr = Y[1:5968];
+    Yte = Y[5969:8525];
+    #println("test3");
+    
+    #Classification Trees
+    println("\tTrees")
+    # Create and train
+    tree_model = DecisionTreeClassifier();
+    start = time_ns();
+    fit!(tree_model, Xtr, Ytr);
+    stop = time_ns();
+    println("\t\tTraining Time: ", float(stop-start) \ 1000000000);
+    # Test
+    start = time_ns();
+    tree_predictions = predict(tree_model, Xte);
+    stop = time_ns();
+    println("\t\tTesting Time: ", float(stop-start) \ 1000000000);
+    tree_acc = accuracy_score(tree_predictions, Yte)
+    global tree_accuracies[i] = tree_acc
+    println("\t\tAccuracy: ", tree_acc);
+
+    #SVC
+    println("\tSVC");
+    # Create and train
+    svm_model = SVC();
+    start = time_ns();
+    fit!(svm_model, Xtr, Ytr);
+    stop = time_ns();
+    println("\t\tTraining Time:", float(stop-start) \ 1000000000);
+    # Test
+    start = time_ns();
+    svm_predictions = predict(svm_model, Xtr);
+    stop= time_ns();
+    println("\t\tTesting Time: ", float(stop-start) \ 1000000000);
+    svc_acc = accuracy_score(svm_predictions, Ytr)
+    global svc_accuracies[i] = svc_acc;
+    println("\t\tAccuracy: ", svc_acc);
+    
+    global i = i+1;
+end
+
+x = 1:20;
+
+plot(x, tree_accuracies, title = "Tree Accuracies");
+savefig("tree_accuracies.pdf");
+plot(x, svc_accuracies, title = "SVC Accuracies");
+savefig("svc_accuracies.pdf");
